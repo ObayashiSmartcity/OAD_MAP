@@ -212,49 +212,76 @@ function createPinIcon(color){
     });
   });
 
-  /* --- カテゴリUI（単一選択） --- */
+/* --- カテゴリUI（初期全選択・排他制御） --- */
   const wrap = document.getElementById("categoryList");
   const hint = document.getElementById("categoryHint");
-  let selectedCategoryId = null;
+  if (hint) hint.style.display = "none"; // 初期全表示のためヒント非表示
 
+  // 1. 全表示レイヤーを初期状態でMapに追加
+  Object.values(layers).forEach(layer => map.addLayer(layer));
+
+  // 2. 「すべて」項目の作成
+  const allRow = document.createElement("label");
+  allRow.className = "item";
+  allRow.innerHTML = `
+    <input type="checkbox" id="check-all" checked>
+    <span class="dot" style="border:1px solid #fff; background:transparent; display:flex; align-items:center; justify-content:center;">
+      <span style="width:6px; height:6px; background:#fff; border-radius:50%;"></span>
+    </span>
+    <span>すべて</span>
+  `;
+  const allCheck = allRow.querySelector("input");
+  wrap.appendChild(allRow);
+
+  const catChecks = []; // 個別チェックボックスの参照保持用
+
+  // 3. 個別カテゴリ項目の生成
   categories.forEach(c => {
     const row = document.createElement("label");
     row.className = "item";
     row.innerHTML = `
-      <input type="checkbox">
+      <input type="checkbox" class="cat-check" data-id="${c.category_id}">
       <span class="dot" style="background:${c.color_code}"></span>
       <span>${c.category_name}</span>
     `;
-
     const checkbox = row.querySelector("input");
-
-    checkbox.addEventListener("change", () => {
-
-      // 全チェック解除
-      document
-        .querySelectorAll("#categoryList input[type='checkbox']")
-        .forEach(cb => cb.checked = false);
-
-      // 全レイヤー非表示
-      Object.values(layers)
-        .forEach(layer => map.removeLayer(layer));
-
-      // 選択中のみ表示
-      checkbox.checked = true;
-      map.addLayer(layers[c.category_id]);
-
-      selectedCategoryId = c.category_id;
-      hint.style.display = "none";
-
-      // カテゴリ選択ログ(※修正しない)
-      track({
-        type: "category_select",
-        category_id: c.category_id,
-        category_name: c.category_name
-      });
-    });
-
+    catChecks.push(checkbox);
     wrap.appendChild(row);
+
+    // 【個別選択時の挙動】
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        // 個別が選ばれたら「すべて」を解除
+        if (allCheck.checked) {
+          allCheck.checked = false;
+          // 「すべて」から「個別」に切り替わった瞬間、一旦全レイヤーを消す
+          Object.values(layers).forEach(l => map.removeLayer(l));
+        }
+        map.addLayer(layers[c.category_id]);
+      } else {
+        map.removeLayer(layers[c.category_id]);
+        // 全て外れたら「すべて」にチェックを戻す（任意）
+        if (!catChecks.some(cb => cb.checked)) {
+          allCheck.checked = true;
+          Object.values(layers).forEach(l => map.addLayer(l));
+        }
+      }
+      track({ type: "category_toggle", category_id: c.category_id, checked: checkbox.checked });
+    });
+  });
+
+  // 【「すべて」選択時の挙動】
+  allCheck.addEventListener("change", () => {
+    if (allCheck.checked) {
+      // 個別チェックをすべて解除
+      catChecks.forEach(cb => cb.checked = false);
+      // 全レイヤーを表示
+      Object.values(layers).forEach(l => map.addLayer(l));
+      track({ type: "category_select_all" });
+    } else {
+      // 「すべて」が外されたら、便宜上全レイヤーを削除
+      Object.values(layers).forEach(l => map.removeLayer(l));
+    }
   });
 
   /* --- カテゴリ開閉 --- */
