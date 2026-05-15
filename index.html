@@ -212,15 +212,39 @@ function createPinIcon(color){
     });
   });
 
-/* --- カテゴリUI（初期全選択・排他制御） --- */
+/* --- カテゴリUI（完全排他：一つしか選択できない） --- */
   const wrap = document.getElementById("categoryList");
   const hint = document.getElementById("categoryHint");
-  if (hint) hint.style.display = "none"; // 初期全表示のためヒント非表示
+  if (hint) hint.style.display = "none";
 
-  // 1. 全表示レイヤーを初期状態でMapに追加
+  // 初期状態：全表示
   Object.values(layers).forEach(layer => map.addLayer(layer));
 
-  // 2. 「すべて」項目の作成
+  // チェックボックスの状態を一括管理する関数
+  function updateFilters(selectedId) {
+    // 全レイヤーを一旦削除
+    Object.values(layers).forEach(l => map.removeLayer(l));
+
+    if (selectedId === "all") {
+      // 「すべて」の場合：全レイヤー表示、個別チェックを外す
+      Object.values(layers).forEach(l => map.addLayer(l));
+      catChecks.forEach(cb => cb.checked = false);
+      allCheck.checked = true;
+    } else {
+      // 個別カテゴリの場合：「すべて」を外し、他も外す
+      allCheck.checked = false;
+      catChecks.forEach(cb => {
+        if (cb.dataset.id !== selectedId) {
+          cb.checked = false;
+        } else {
+          cb.checked = true; // クリックされたものだけON
+          map.addLayer(layers[selectedId]);
+        }
+      });
+    }
+  }
+
+  // 1. 「すべて」項目の作成
   const allRow = document.createElement("label");
   allRow.className = "item";
   allRow.innerHTML = `
@@ -233,9 +257,9 @@ function createPinIcon(color){
   const allCheck = allRow.querySelector("input");
   wrap.appendChild(allRow);
 
-  const catChecks = []; // 個別チェックボックスの参照保持用
+  const catChecks = [];
 
-  // 3. 個別カテゴリ項目の生成
+  // 2. 個別カテゴリ項目の生成
   categories.forEach(c => {
     const row = document.createElement("label");
     row.className = "item";
@@ -248,40 +272,24 @@ function createPinIcon(color){
     catChecks.push(checkbox);
     wrap.appendChild(row);
 
-    // 【個別選択時の挙動】
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        // 個別が選ばれたら「すべて」を解除
-        if (allCheck.checked) {
-          allCheck.checked = false;
-          // 「すべて」から「個別」に切り替わった瞬間、一旦全レイヤーを消す
-          Object.values(layers).forEach(l => map.removeLayer(l));
-        }
-        map.addLayer(layers[c.category_id]);
+      // チェックを外そうとした場合でも、必ずどれか一つは選択されている状態にする
+      if (!checkbox.checked) {
+        updateFilters("all");
       } else {
-        map.removeLayer(layers[c.category_id]);
-        // 全て外れたら「すべて」にチェックを戻す（任意）
-        if (!catChecks.some(cb => cb.checked)) {
-          allCheck.checked = true;
-          Object.values(layers).forEach(l => map.addLayer(l));
-        }
+        updateFilters(c.category_id);
       }
-      track({ type: "category_toggle", category_id: c.category_id, checked: checkbox.checked });
+      
+      if(checkbox.checked) {
+        track({ type: "category_select", category_id: c.category_id, category_name: c.category_name });
+      }
     });
   });
 
-  // 【「すべて」選択時の挙動】
+  // 「すべて」のクリックイベント
   allCheck.addEventListener("change", () => {
-    if (allCheck.checked) {
-      // 個別チェックをすべて解除
-      catChecks.forEach(cb => cb.checked = false);
-      // 全レイヤーを表示
-      Object.values(layers).forEach(l => map.addLayer(l));
-      track({ type: "category_select_all" });
-    } else {
-      // 「すべて」が外されたら、便宜上全レイヤーを削除
-      Object.values(layers).forEach(l => map.removeLayer(l));
-    }
+    updateFilters("all");
+    track({ type: "category_select_all" });
   });
 
   /* --- カテゴリ開閉 --- */
